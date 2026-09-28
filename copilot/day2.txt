@@ -30,3 +30,32 @@ void setup()
 void loop()
 {
 }
+
+
+>> ATI
+ATI
+
+Quectel
+EC200U
+Revision: EC200UCNAAR03A09M08
+
+OK
+
+>> AT+CSQ
+AT+CSQ
+
++CSQ: 7,99
+
+OK
+
+>> AT+COPS?
+AT+COPS?
+
++COPS: 0
+
+OK
+
+>> AT+QIACT?
+AT+QIACT?
+
+OK

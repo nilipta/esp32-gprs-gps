@@ -1,0 +1,1367 @@
+Yes, that is very possible if the DC-10120 actually contains an ESP32 plus a cellular modem.
+The basic architecture would be:
+SIM Card
+    │
+    ▼
+Cellular Modem (4G/3G)
+    │ UART/USB
+    ▼
+ESP32
+    │
+ ┌──┴──┐
+ │ WiFi│
+ └──┬──┘
+    ▼
+Local Devices
+(Phones, Laptops, IoT)
+The ESP32 would:
+1.	Connect to the cellular modem using AT commands.
+2.	Establish the Internet connection through the SIM.
+3.	Create a WiFi Access Point (AP).
+4.	Perform routing/NAT so WiFi clients can access the Internet.
+First thing to identify
+The model number DC-10120 is not enough for me to know the exact hardware inside.
+Open the device and look for markings such as:
+•	ESP32-WROOM-32
+•	ESP32-S3
+•	SIM7600
+•	SIM800
+•	SIM7000
+•	EC200U
+•	A7670
+•	Quectel modules
+•	Any other modem part number
+Also check whether there is:
+•	USB port
+•	SMA antenna connector
+•	SIM slot
+•	External WiFi antenna
+Easiest firmware options
+If it is an ESP32-based board:
+Option 1: ESP-IDF (best)
+Write custom firmware using ESP-IDF:
+•	WiFi AP mode
+•	PPP over Serial
+•	NAT Router
+ESP-IDF already has examples for:
+•	PPP client
+•	WiFi AP
+•	Networking stack
+Option 2: Open-source ESP32 router projects
+Projects already exist that turn an ESP32 into:
+•	4G router
+•	WiFi repeater
+•	NAT router
+You can adapt one instead of starting from scratch.
+Option 3: ESPHome
+Not recommended for a cellular router. ESPHome is excellent for IoT devices but not for NAT routing and modem management.
+Limitations
+An ESP32 can route Internet for a few devices, but:
+•	Throughput is limited.
+•	Heavy video streaming may be slow.
+•	Many simultaneous clients can overwhelm it.
+•	VPN and advanced firewall features are limited.
+For a serious router, people often use:
+•	OpenWRT routers
+•	Raspberry Pi + LTE modem
+What I would do
+Since you are comfortable with firmware development, I would:
+1.	Identify the exact ESP32 variant.
+2.	Identify the cellular modem model.
+3.	Dump the current firmware (backup).
+4.	Use ESP-IDF.
+5.	Implement: 
+o	Cellular PPP connection
+o	WiFi AP
+o	NAT
+o	DHCP server
+That gives a completely standalone SIM-to-WiFi hotspot.
+If you can provide clear photos of the PCB (front and back) or the chip markings, I can help determine whether the hardware already supports this and point you to the exact ESP-IDF components needed.
+That's actually a very capable combination.
+Your device has:
+•	ESP32-S3-WROOM-1 → main MCU with Wi-Fi and USB
+•	Quectel EC200U-CN → 4G LTE Cat-1 cellular modem
+So yes, your idea is technically feasible.
+What the hardware can do
+SIM Card
+   │
+   ▼
+EC200U-CN (4G Modem)
+   │ UART / USB
+   ▼
+ESP32-S3
+   │
+   ├─ DHCP Server
+   ├─ NAT Router
+   └─ WiFi AP
+         │
+         ▼
+    Phones/Laptops
+Essentially it can become a mini 4G hotspot.
+The good news
+The EC200U supports:
+•	Data connections
+•	PPP
+•	TCP/IP stack
+•	USB networking modes
+•	AT commands
+The ESP32-S3 has enough RAM and processing power for a small LTE-to-WiFi router.
+Biggest challenge
+The challenge is not the ESP32.
+The challenge is whether the manufacturer:
+•	Locked flash readout
+•	Disabled bootloader access
+•	Customized the EC200U firmware
+You'll want to investigate first.
+Step 1: Find programming access
+Look for:
+•	USB-C / Micro USB connector
+•	UART pads labeled: 
+o	TX
+o	RX
+o	GND
+o	3V3
+o	IO0 / BOOT
+If available, connect USB and run:
+lsusb
+or
+dmesg | grep tty
+on your Pop!_OS machine.
+Step 2: Check ESP32 access
+Try:
+esptool.py flash_id
+If it responds, you're in great shape.
+Also dump the original firmware first:
+esptool.py read_flash 0 0x400000 backup.bin
+Never erase before taking a backup.
+Step 3: Determine modem connection
+Most likely the EC200U is connected to the ESP32 through:
+UART
+or
+USB
+Check PCB traces.
+If UART, you can talk to it with:
+AT
+AT+CPIN?
+AT+CSQ
+AT+CGATT?
+Firmware options
+Option A: Modify existing firmware
+Hardest because you must reverse engineer it.
+Option B: Build your own
+I'd personally choose this.
+Use:
+•	ESP-IDF
+•	lwIP NAT
+•	PPP client
+•	WiFi SoftAP
+Many open-source ESP32 NAT Router projects already provide:
+WiFi AP
+DHCP
+NAT
+Routing
+You mainly need to replace WAN with the EC200U modem.
+Performance expectations
+Realistically:
+Task	Result
+Web browsing	Good
+WhatsApp	Good
+YouTube 720p	Usually OK
+Multiple users	Limited
+Torrenting	Not ideal
+VPN router	Possible but heavy
+What I would do next
+As a firmware developer, I'd first determine:
+1.	Can the ESP32-S3 flash be read?
+2.	What UART pins connect to the EC200U?
+3.	Is there exposed USB access to the EC200U?
+Once you have photos of the PCB or the UART pin labels, we can map the hardware and determine whether you can turn this into a custom LTE Wi-Fi hotspot with ESP-IDF and minimal reverse engineering.
+Nice! This photo reveals quite a lot.
+What I can identify
+Board marking:
+7SEMI 4G LTE + GNSS WiFi Bluetooth
+Main components:
+1.	ESP32-S3-WROOM-1
+o	WiFi 2.4 GHz
+o	Bluetooth
+o	USB OTG
+o	Programmable with ESP-IDF or Arduino
+2.	Quectel EC200U-CN
+o	4G LTE modem
+o	GNSS capable (GPS support according to board markings)
+o	AT command interface
+o	USB and UART interfaces
+3.	Nano SIM slot
+4.	Two USB-C connectors
+o	Likely one connected to ESP32-S3
+o	One may expose the EC200U modem directly
+5.	EC200U breakout pins Visible labels:
+GND
+VBUS
+TX
+RX
+DTR
+RI
+6.	ESP32-S3 breakout pins Almost all GPIOs are exposed.
+________________________________________
+Very encouraging observation
+Along the left side of the EC200U module I can read:
+GND
+5V
+SPK+
+SPK-
+M1
+KEY
+RST
+RX
+TX
+DRX
+DTX
+That strongly suggests the manufacturer deliberately exposed the modem UART.
+Meaning:
+ESP32 <--UART--> EC200U
+is probably already wired on the PCB.
+________________________________________
+I think your project is absolutely achievable
+You could create:
+SIM Card
+   │
+ EC200U
+   │
+ ESP32-S3
+   │
+ WiFi Access Point
+   │
+ Phone/Laptop
+exactly like a portable hotspot.
+________________________________________
+Even better idea
+Instead of PPP, use the modem's built-in TCP/IP stack.
+ESP32 sends:
+AT+CGATT=1
+AT+QIACT
+and opens sockets through AT commands.
+This is easier for IoT applications.
+But for sharing Internet to multiple devices, you'll want:
+WiFi AP
++ NAT
++ DHCP
++ Cellular WAN
+using PPP or ECM/RNDIS if supported.
+________________________________________
+What I would test first
+Plug both USB-C ports into Pop!_OS and run:
+lsusb
+and:
+dmesg -w
+Then unplug/replug.
+I'm curious whether Linux sees:
+Espressif ESP32-S3
+and separately
+Quectel EC200U
+If the modem appears as:
+ttyUSB0
+ttyUSB1
+ttyUSB2
+or
+wwan0
+then this board becomes much easier to work with.
+________________________________________
+Possible firmware architecture
+Using ESP-IDF:
+UART --> EC200U
+PPP Client
+ESP32 SoftAP
+192.168.4.1
+DHCP Server
+NAT Router
+DNS Forwarder
+There are existing ESP32 NAT router examples, so you would mainly replace the WAN side with the EC200U connection.
+________________________________________
+One thing to verify
+Can you show the back side of the PCB?
+I'm looking specifically for:
+•	USB-UART chip (CH340/CP2102/CH343)
+•	wiring between ESP32 and EC200U
+•	jumpers or solder bridges
+•	flash size markings
+The back side will tell us whether the board was designed exactly for the "4G hotspot" use case or merely as a development board.
+This backside photo is actually very revealing. I think this board was designed specifically to make the ESP32-S3 and EC200U work together, which is great news for your hotspot project.
+What I can see
+On the backside, there is a silkscreen table:
+ESP32 TX1  -> 4G RX
+ESP32 RX1  -> 4G TX
+ESP32 IO2  -> 4G RESET
+ESP32 IO10 -> 4G ON/OFF
+This is the jackpot.
+That tells us the board designer already wired the modem to the ESP32.
+Likely connection map
+ESP32-S3
+GPIO43 TX1  ----> EC200U RX
+GPIO44 RX1  <---- EC200U TX
+GPIO2       ----> EC200U RESET
+GPIO10      ----> EC200U PWRKEY
+The exact TX1/RX1 GPIOs depend on the firmware, but the board explicitly states there is a dedicated UART link between ESP32 and EC200U.
+What this means
+You do not need:
+•	External USB modem drivers
+•	Extra wiring
+•	Hardware modifications
+The ESP32 can directly send:
+AT
+AT+CPIN?
+AT+CSQ
+AT+CGATT?
+to the EC200U over UART.
+Your hotspot project is realistic
+Architecture:
+SIM Card
+    │
+    ▼
+EC200U-CN
+    │
+ UART
+    │
+ESP32-S3
+    │
+WiFi AP
+    │
+Phone/Laptop
+Development options
+Option 1: PPP (recommended)
+ESP-IDF already supports PPP.
+Flow:
+EC200U
+   ↓
+PPP connection
+   ↓
+lwIP stack
+   ↓
+NAT Router
+   ↓
+WiFi AP
+This gives a true Internet-sharing hotspot.
+Option 2: HTTP/MQTT only
+ESP32 controls the modem with AT commands and uses the modem's internal TCP/IP stack.
+Good for:
+•	Tracking devices
+•	Telemetry
+•	MQTT
+Not suitable for sharing Internet.
+What I'd do first
+Connect USB and flash a simple test.
+Example Arduino sketch:
+HardwareSerial Modem(1);
+void setup() {
+  Serial.begin(115200);
+  Modem.begin(
+      115200,
+      SERIAL_8N1,
+      44,   // RX from modem
+      43    // TX to modem
+  );
+  delay(3000);
+  Modem.println("AT");
+}
+void loop() {
+  while (Modem.available()) {
+    Serial.write(Modem.read());
+  }
+}
+If you receive:
+OK
+the UART path is confirmed.
+Another thing I noticed
+The board has:
+GNSS
+marked on it and two SMA/IPEX antenna connectors.
+So after getting LTE working, you can likely access:
+AT+QGPS=1
+and obtain GPS coordinates from the EC200U as well.
+My assessment
+As someone who has worked with ESP hardware, I'd rate this board:
+Feature	Status
+ESP32 programmable	✅
+LTE modem	✅
+UART prewired	✅
+SIM socket	✅
+External antennas	✅
+Suitable for hotspot firmware	✅
+Need hardware modification	❌
+I would estimate there's about a 90% chance you can turn this board into a custom LTE-to-WiFi hotspot using ESP-IDF without changing the hardware at all.
+The next practical step is to connect it to your Pop!_OS machine, flash a tiny UART test, verify the EC200U responds with OK, and then build a PPP + WiFi AP prototype.
+The screenshot is actually a good sign.
+Windows is already detecting the Quectel EC200U-CN interfaces but doesn't have the proper drivers:
+•	CDC Ethernet Control Model (ECM) → LTE network interface
+•	Multiple Mobile Generic Serial devices → modem AT ports, GPS port, diagnostics port
+This is exactly what I'd expect from an EC200U modem without drivers installed.
+Driver you need
+Install the Quectel USB Driver for EC200U.
+Look for:
+Quectel_Windows_USB_Driver
+or
+Quectel EC200U USB Driver
+After installation, Device Manager should show something similar to:
+Ports (COM & LPT)
+ ├─ Quectel USB AT Port (COMx)
+ ├─ Quectel USB Modem
+ ├─ Quectel USB NMEA Port
+ └─ Quectel USB Diagnostics Port
+instead of "Mobile Generic Serial".
+Check hardware IDs first
+In Device Manager:
+Unknown device
+    ↓
+Properties
+    ↓
+Details
+    ↓
+Hardware Ids
+Post a screenshot or the values such as:
+USB\VID_xxxx&PID_xxxx
+and I can tell exactly which driver package is required.
+Quick test once installed
+Open PuTTY on the AT port COM number:
+115200 baud
+8N1
+Type:
+AT
+You should get:
+OK
+Then:
+ATI
+and it should identify the EC200U.
+For your hotspot project
+Once the driver is installed you can verify the modem independently from the ESP32.
+If you get AT command access from Windows, then:
+1.	Modem hardware is working.
+2.	SIM can be tested.
+3.	LTE data connection can be verified.
+4.	You can later write ESP32 firmware to control the same modem through the UART connection already wired on the board.
+The very next thing I'd check is the USB Hardware IDs (VID/PID) of those unknown devices, because that will confirm whether you're connected to the ESP32 USB, the EC200U USB, or both simultaneously.
+Based on the board photos, I believe the upper USB-C connector (closest to the ESP32-S3 module) is the ESP32 programming/debug port, and the lower USB-C connector (closer to the EC200U modem) is likely connected to the 4G modem.
+A simple way to confirm:
+Test 1: Connect only the top USB
+Open Device Manager.
+If you see something like:
+COMx
+USB JTAG/Serial
+Espressif
+or a new serial port appears, that's the ESP32 port.
+Test 2: Connect only the bottom USB
+You should see the devices from your screenshot:
+CDC Ethernet Control Model (ECM)
+Mobile Generic Serial
+Mobile Generic Serial
+...
+Those are characteristic of a cellular modem exposing multiple USB interfaces.
+Best approach
+Try the ports one at a time and note what appears in Device Manager.
+For the modem USB, after installing the Quectel driver, you should get something like:
+Quectel USB AT Port
+Quectel USB NMEA Port
+Quectel USB Modem
+Quectel USB Diagnostics
+For the ESP32 USB, install the ESP32-S3 drivers/toolchain and see if:
+esptool.py chip_id
+or Arduino IDE detects an ESP32-S3 COM port.
+Even better
+In Device Manager, right-click one of the unknown devices → Properties → Details → Hardware Ids and paste the first line (VID/PID), for example:
+USB\VID_2C7C&PID_0901
+That will immediately tell us whether that USB port is the Quectel EC200U or the ESP32-S3, and we can identify the correct driver with certainty.
+Yes, for the final project, the ESP32 is the device you'll program.
+Think of it like this:
+Your Firmware
+      │
+      ▼
+ESP32-S3
+      │ UART
+      ▼
+EC200U-CN Modem
+      │
+      ▼
+4G Network
+The EC200U is mostly a "smart peripheral". Your firmware running on the ESP32 will:
+1.	Power on the modem.
+2.	Send AT commands.
+3.	Connect to the cellular network.
+4.	Create a WiFi Access Point.
+5.	Run DHCP.
+6.	Forward traffic between WiFi and LTE.
+During development
+You'll likely use both USB ports, but for different purposes:
+ESP32 USB (primary)
+Use this for:
+•	Flashing firmware
+•	Serial debugging
+•	Viewing logs
+Tools:
+•	ESP-IDF
+•	Arduino IDE
+•	PlatformIO
+•	esptool.py
+EC200U USB (optional but useful)
+Use this for:
+•	Testing SIM card
+•	Sending AT commands directly
+•	Verifying LTE works before writing firmware
+•	GPS testing
+My recommended workflow
+1.	Connect ESP32 USB.
+2.	Install ESP-IDF or Arduino IDE.
+3.	Upload a simple "Hello World" sketch.
+4.	Confirm serial output works.
+Then:
+5.	Write a UART test to talk to the EC200U.
+6.	Send:
+AT
+Expected response:
+OK
+Then:
+ATI
+AT+CPIN?
+AT+CSQ
+Once that works, you're 80% of the way to your hotspot firmware.
+Even better news
+From the board markings on the back:
+ESP32 TX1 -> 4G RX
+ESP32 RX1 -> 4G TX
+ESP32 IO2 -> 4G RESET
+ESP32 IO10 -> 4G ON/OFF
+the manufacturer has already wired everything needed between the ESP32 and EC200U.
+So you don't need jumper wires or hardware modifications. You can treat the modem as a UART-connected peripheral directly from your firmware.
+For your specific goal, I'd strongly recommend ESP-IDF rather than Arduino, because ESP-IDF already contains the networking components needed for PPP, NAT, WiFi AP mode, and routing. That will make turning this board into a true LTE WiFi hotspot much easier.
+For Windows + EC200U-CN, ignore all the Android and Linux drivers.
+From your list, I would install these in this order:
+1. Primary Driver (Install First)
+✅ Quectel_Windows_USB_Driver(A)_Customer_V1.4_EN
+This is the general Windows USB serial driver package for Quectel modules.
+After installation, your "Mobile Generic Serial" devices should become:
+Quectel USB AT Port
+Quectel USB NMEA Port
+Quectel USB Diagnostics Port
+Quectel USB Modem
+2. If the Ethernet Interface Still Shows Unknown
+✅ Quectel_Windows_USB_Driver(Q)_ECM_V1.1_EN
+Your screenshot specifically shows:
+CDC Ethernet Control Model (ECM)
+so the ECM driver may be needed for the modem's USB networking interface.
+________________________________________
+For Your ESP32 Project
+Honestly, you do not actually need Windows modem drivers right now.
+Your end goal is:
+ESP32-S3
+   ↓ UART
+EC200U-CN
+   ↓ LTE
+Internet
+The ESP32 talks directly to the modem over UART.
+The Windows drivers are only useful for:
+•	Testing the modem
+•	Sending AT commands manually
+•	Checking SIM registration
+•	Verifying LTE works
+________________________________________
+What I Would Do
+1.	Connect the lower USB-C (modem side).
+2.	Install: 
+o	Quectel_Windows_USB_Driver(A)_Customer_V1.4_EN
+3.	Reboot.
+4.	Check Device Manager.
+You should get several COM ports.
+Then open PuTTY on one of them and try:
+AT
+Expected:
+OK
+Then:
+ATI
+Expected:
+Quectel
+EC200U-CN
+...
+If you get that response, we know the modem is healthy and we can move on to programming the ESP32-S3 and building the LTE hotspot firmware.
+Excellent. You've already proven the modem is alive.
+From your screenshot and testing:
+Port	Purpose
+COM5	✅ AT Command Port
+COM10	✅ NMEA/GNSS or secondary AT port
+COM6	Diagnostic Port
+COM8	CP Control Port
+COM9	AP Log Port
+COM17	Modem Port
+The fact that:
+AT
+OK
+ATI
+Quectel
+EC200U
+Revision: EC200UCNAAR03A09M08
+works means:
+✅ USB driver installed correctly
+✅ EC200U is powered
+✅ USB communication works
+✅ Firmware is healthy
+This is a major milestone.
+________________________________________
+Next test: SIM detection
+On COM5 run:
+AT+CPIN?
+Expected:
++CPIN: READY
+If so, SIM is detected.
+________________________________________
+Check signal
+AT+CSQ
+Example:
++CSQ: 20,99
+Higher first number is better.
+________________________________________
+Check network registration
+AT+CREG?
+or
+AT+CEREG?
+Expected:
++CEREG: 0,1
+or
++CEREG: 0,5
+Meaning the modem is registered on LTE.
+________________________________________
+Check board integration
+Now that we know the modem works, the next thing I'd investigate is the ESP32 side.
+Plug the other USB-C port into Windows.
+See if a new COM port appears.
+You may see:
+USB JTAG/Serial Debug Unit
+or
+ESP32-S3
+If yes, then we can flash firmware directly.
+________________________________________
+For your LTE Hotspot project
+The roadmap is now very clear:
+Phase 1
+Verify modem:
+AT+CPIN?
+AT+CSQ
+AT+CEREG?
+Phase 2
+Verify ESP32 programming port.
+Phase 3
+Flash a simple ESP32 firmware that sends:
+AT
+to the EC200U over the board's internal UART.
+Phase 4
+Use ESP-IDF:
+EC200U
+   ↓ PPP
+ESP32-S3
+   ↓ NAT
+WiFi AP
+and you've got your own LTE Wi Fi hotspot.
+At this point, I'd say there's a very high chance this board can do exactly what you originally wanted. The modem side is already confirmed working. Now we just need to identify the ESP32 programming USB port.
+Perfect. The modem is working and registered.
+Your results mean:
+AT+CPIN?
++CPIN: READY
+✅ SIM card detected
+AT+CREG?
++CREG: 0,1
+✅ Registered on cellular network
+AT+CSQ?
++CSQ: 4,99
+⚠️ Weak signal
+CSQ values roughly:
+CSQ	Signal
+0-9	Poor
+10-14	Fair
+15-19	Good
+20-31	Very Good
+Your value:
+4
+is quite weak. The modem may still work, but speeds and stability will be poor.
+Try:
+•	connecting LTE antenna
+•	moving near a window
+•	testing outdoors
+Then run:
+AT+CSQ
+again.
+________________________________________
+Now check data connectivity.
+Try:
+AT+COPS?
+This should show the operator.
+Then:
+AT+CPSI?
+This is very useful on Quectel modules and should show:
+LTE
+band
+RSSI
+cell info
+________________________________________
+For your hotspot project, we've already proven the critical parts:
+✅ ESP32-S3 board present
+✅ EC200U modem present
+✅ USB driver working
+✅ AT commands working
+✅ SIM detected
+✅ Network registration successful
+At this point the modem side is essentially validated.
+The next thing I'd focus on is the ESP32 programming port.
+Connect the other USB-C connector and check whether:
+•	Arduino IDE detects an ESP32-S3
+•	ESP-IDF detects an ESP32-S3
+•	A new COM port appears
+If it does, we can immediately write a tiny firmware that talks to the modem over the internal UART and verify the wiring shown on the PCB. That will be the first step toward turning this board into an LTE-to-WiFi hotspot.
+Yes, and you are actually in a very good position because your board matches a common architecture:
+ESP32-S3
+   │
+UART
+   │
+EC200U
+   │
+LTE
+I would recommend not starting from scratch.
+Best option: Espressif's AP-to-PPPoS example
+Espressif already provides an example that does almost exactly what you want:
+ESP-Modem ap_to_pppos example: WiFi AP + NAT + PPP cellular connection. [docs.espressif.com], [deepwiki.com]
+Architecture:
+4G Modem
+    │
+ PPPoS
+    │
+ESP32-S3
+    │
+NAT
+    │
+WiFi AP
+This is essentially the backbone of a cellular hotspot. [docs.espressif.com]
+________________________________________
+Second option: ESP32 NAT Router
+The most popular project is:
+martin-ger/esp32_nat_router. It already implements:
+•	WiFi AP
+•	DHCP
+•	NAT
+•	Web UI
+•	ESP32-S3 support
+and has prebuilt ESP32-S3 binaries. [github.com], [martin-ger.github.io]
+However:
+WAN = WiFi
+by default, not LTE. You'll still need to modify the WAN side to use the EC200U PPP connection.
+________________________________________
+What I would personally do
+Since you're a firmware developer and comfortable with embedded work:
+1.	Install ESP-IDF.
+2.	Start from Espressif's ap_to_pppos example. [docs.espressif.com], [deepwiki.com]
+3.	Change UART pins according to your board:
+ESP32 TX1 -> 4G RX
+ESP32 RX1 -> 4G TX
+ESP32 IO2 -> 4G RESET
+ESP32 IO10 -> 4G ON/OFF
+4.	Configure your APN.
+5.	Build and flash.
+That gets you a working LTE hotspot much faster than adapting a WiFi router project.
+________________________________________
+Before doing any firmware work
+Run a few more AT commands on COM5:
+AT+COPS?
+AT+CGDCONT?
+AT+CPSI?
+Especially AT+CPSI?.
+It will tell us:
+•	LTE band
+•	Signal strength
+•	Network mode
+and confirm the modem can actually establish a data session before we spend time flashing firmware.
+This is actually very promising.
++COPS: 0,0,"IND airtel",7
+means:
+•	✅ SIM is working
+•	✅ Airtel network found
+•	✅ Registered on Airtel
+•	✅ Access technology = 7 (LTE)
+So the modem is on 4G LTE.
+The weird result is:
+AT+CPSI?
+OK
+Normally Quectel returns network details before OK. That firmware may not support CPSI or may require a data session first.
+The other odd result:
+AT+CGDCONT?
++CME ERROR: 58
+That's not fatal. We can manually configure an APN later.
+Try these:
+AT+QCCID
+(SIM ICCID)
+AT+CEREG?
+(LTE registration)
+AT+QNWPREFCFG="mode_pref"
+(network mode)
+Most importantly, let's test Internet access from the modem itself:
+AT+QIACT?
+If it errors, configure Airtel APN:
+AT+CGDCONT=1,"IP","airtelgprs.com"
+Then:
+AT+QIACT=1
+Then:
+AT+QIACT?
+If you get an IP address, the LTE data session is working.
+________________________________________
+Regarding your original question about an open-source firmware:
+I have not found a project that is a direct "flash-and-run" match for:
+ESP32-S3 + EC200U-CN + WiFi hotspot
+However, the closest starting point is Espressif's ap_to_pppos example, which already implements:
+PPPoS cellular connection
++
+WiFi AP
++
+NAT routing
+This is essentially an LTE hotspot architecture. [docs.espressif.com], [deepwiki.com]
+Given your board has the modem hardwired:
+ESP32 TX1 -> 4G RX
+ESP32 RX1 -> 4G TX
+ESP32 IO2 -> 4G RESET
+ESP32 IO10 -> 4G ON/OFF
+I honestly think you're only a small amount of firmware work away from having a custom 4G hotspot.
+Right now, before touching the ESP32, I'd verify one thing:
+AT+QIACT?
+and see whether the EC200U can obtain a cellular IP address. If it can, we've confirmed the LTE data side is fully operational.
+That's the result we wanted. 🎉
+Your EC200U is not just attached to the network, it already has a mobile data session:
++COPS: 0,0,"IND airtel",7
+✅ Connected to Airtel LTE
++QIACT: 1,1,3,"100.83.184.37","::"
+✅ PDP context active
+✅ Got an IPv4 address: 100.83.184.37
+✅ Mobile Internet is working
+At this point we've verified:
+SIM detected      ✅
+Network registered ✅
+LTE connected      ✅
+Data session active ✅
+ESP32 onboard      ✅
+EC200U onboard     ✅
+So your original idea is 100% feasible:
+Airtel SIM
+     │
+EC200U-CN
+     │
+UART
+     │
+ESP32-S3
+     │
+WiFi AP + NAT
+     │
+Phones/Laptops
+What I'd do next
+Find the ESP32 programming port.
+Install:
+•	Arduino IDE 2.x
+or preferably
+•	ESP-IDF 5.x
+Then connect the ESP32 USB port and verify it appears as an ESP32-S3 serial device.
+Fastest route
+Don't build everything yourself.
+Start from Espressif's ap_to_pppos example. It already provides:
+Modem PPP connection
++
+WiFi Access Point
++
+DHCP
++
+NAT
+which is essentially a cellular hotspot. [docs.espressif.com], [deepwiki.com]
+One thing I'd test for curiosity
+On COM5:
+AT+QPING=1,"8.8.8.8"
+If it returns ping replies, you've proven the modem itself can reach the Internet.
+Honestly, you're much further along than I expected. The hardware is alive, the SIM works, LTE works, and the board wiring already exposes the modem to the ESP32. The remaining work is primarily firmware integration, not hardware reverse engineering.
+That output is excellent.
+The initial ERRORs are normal because QPING runs asynchronously and the modem starts reporting results after the command is accepted.
+What matters is:
++QPING: 0,"8.8.8.8",64,2949,255
++QPING: 0,"8.8.8.8",64,1347,255
++QPING: 0,4,2,2,1347,2949,2148
+This proves:
+✅ LTE attached
+✅ PDP context active
+✅ Got IP address (100.83.184.37)
+✅ DNS/network routing working
+✅ Reached Google's DNS server (8.8.8.8)
+✅ Internet access is functional
+Frankly, you've already validated 95% of the hardware needed for your project.
+Current status
+ESP32-S3          ✅
+EC200U-CN         ✅
+SIM Card          ✅
+Airtel LTE        ✅
+Internet Access   ✅
+USB Drivers       ✅
+AT Commands       ✅
+What I'd do next
+Now stop working on the modem side.
+The modem is proven.
+Focus on finding the ESP32-S3 programming port.
+Plug the other USB-C connector and look for:
+USB JTAG/Serial Debug Unit
+or
+ESP32-S3
+or a new COM port.
+If a new COM port appears, install Arduino IDE and test with:
+void setup() {
+  Serial.begin(115200);
+}
+void loop() {
+  Serial.println("ESP32 Alive");
+  delay(1000);
+}
+Can you directly flash something?
+Not that I know of for your exact board.
+You have:
+ESP32-S3
++
+EC200U-CN
+which is a somewhat uncommon combination.
+The closest ready-made solution is:
+•	ESP-IDF ap_to_pppos
+•	ESP32 NAT Router
+The first is actually closer to your goal because it already does:
+Cellular PPP
++
+WiFi AP
++
+NAT
++
+DHCP
+The nice thing is your board silkscreen already tells us:
+ESP32 TX1 -> 4G RX
+ESP32 RX1 -> 4G TX
+ESP32 IO2 -> 4G RESET
+ESP32 IO10 -> 4G ON/OFF
+So almost all the hardware integration work is already done.
+My honest assessment: this board is probably one of the easiest ESP32-based LTE hotspot platforms you could have picked. The modem is alive, connected to Airtel LTE, and successfully pinging the Internet. The remaining work is almost entirely firmware.
+Since your module is ESP32-S3-WROOM-1, in Arduino IDE select:
+ESP32S3 Dev Module
+This is the safest and most commonly used choice for custom ESP32-S3 boards.
+Arduino IDE Setup
+After installing the Espressif ESP32 package:
+Tools → Board → ESP32 Arduino
+                     ↓
+               ESP32S3 Dev Module
+Recommended settings:
+USB CDC On Boot      Enabled
+CPU Frequency        240MHz
+Flash Mode           QIO
+Upload Speed         921600 (or 460800)
+USB Firmware MSC     Disabled
+USB DFU On Boot      Disabled
+PSRAM                OPI PSRAM (if present)
+If upload fails initially, don't worry. Many ESP32-S3 boards require:
+1.	Hold BOOT
+2.	Press RESET
+3.	Release RESET
+4.	Release BOOT
+5.	Upload
+First test sketch
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  Serial.println("ESP32-S3 Alive");
+}
+void loop() {
+  Serial.println("Tick");
+  delay(1000);
+}
+If you see:
+ESP32-S3 Alive
+Tick
+Tick
+Tick
+then you've identified the correct USB port and board configuration.
+After that
+The next sketch I'd write is one that talks to the EC200U:
+HardwareSerial modem(1);
+void setup() {
+  Serial.begin(115200);
+  modem.begin(
+      115200,
+      SERIAL_8N1,
+      44,   // RX
+      43    // TX
+  );
+  delay(3000);
+  modem.println("AT");
+}
+void loop() {
+  while (modem.available())
+    Serial.write(modem.read());
+}
+Since the silkscreen says:
+ESP32 TX1 -> 4G RX
+ESP32 RX1 -> 4G TX
+there is a good chance UART1 is already connected internally to the EC200U.
+If the ESP32 port appears in Device Manager, tell me:
+•	the new COM port number
+•	whether upload succeeds
+•	the boot log output
+and we can determine the exact UART GPIOs used for the modem.
+That message is a huge clue.
+ESP32 serial1 test Rx pin 16 Tx pin 17
+AT+CMGF=1
+Message sent successfully
+This strongly suggests the board vendor already flashed a demo firmware that:
+1.	Uses UART1
+2.	Uses RX=16, TX=17
+3.	Communicates successfully with the EC200U
+4.	Sends SMS via the modem
+So before assuming the silkscreen mapping, I'd trust the running firmware because it has already proven communication with the modem.
+Try this Arduino sketch:
+HardwareSerial modem(1);
+void setup() {
+  Serial.begin(115200);
+  modem.begin(115200, SERIAL_8N1, 16, 17);
+  delay(2000);
+  Serial.println("Sending AT...");
+  modem.println("AT");
+}
+void loop() {
+  while (modem.available()) {
+    Serial.write(modem.read());
+  }
+}
+Expected:
+Sending AT...
+OK
+If you get OK, we've confirmed:
+ESP32 GPIO16 = RX from EC200U
+ESP32 GPIO17 = TX to EC200U
+which matches the vendor's demo.
+Even better
+Before erasing anything, save the current firmware.
+In Arduino IDE open:
+Tools → Get Board Info
+and note the port.
+Or use:
+esptool.py flash_id
+and then:
+esptool.py read_flash 0 0x800000 backup.bin
+This board appears to come with useful demo firmware, and having a backup means you can always restore it.
+Current project status
+ESP32 programming      ✅
+EC200U communication   ✅
+SIM detected           ✅
+LTE registered         ✅
+Internet reachable     ✅
+LTE IP address         ✅
+Honestly, you're now at the stage where you can start coding the hotspot firmware rather than investigating hardware. The board has already proven it can talk to the modem through UART 16/17. That's one of the biggest unknowns solved already.
+That little square character (□) is usually a clue that the UART settings are wrong.
+Most likely one of these is happening:
+Possibility 1: Wrong baud rate
+Try changing:
+modem.begin(115200, SERIAL_8N1, 16, 17);
+to
+modem.begin(9600, SERIAL_8N1, 16, 17);
+or
+modem.begin(57600, SERIAL_8N1, 16, 17);
+The factory firmware may have configured the EC200U for a different UART speed.
+________________________________________
+Possibility 2: Wrong pins
+The interesting part is that the factory firmware printed:
+ESP32 serial1 test Rx pin 16 Tx pin 17
+but the PCB silkscreen suggests a different mapping between the ESP32 and modem.
+It's possible:
+•	the demo firmware was only a loopback test
+•	16/17 are not actually connected to the EC200U
+•	another UART is used internally
+________________________________________
+Better test
+Instead of sending just AT, continuously send it:
+HardwareSerial modem(1);
+void setup() {
+  Serial.begin(115200);
+  modem.begin(115200, SERIAL_8N1, 16, 17);
+}
+void loop() {
+  modem.println("AT");
+  Serial.println("Sent AT");
+  delay(2000);
+  while(modem.available()) {
+    char c = modem.read();
+    Serial.write(c);
+  }
+}
+If you only see:
+Sent AT
+□
+Sent AT
+□
+then the baud rate is wrong or the pins are wrong.
+________________________________________
+Very useful test
+Since you already have working modem USB access on COM5, enter:
+AT+IPR?
+This asks the modem what UART baud rate it is using.
+If that returns something like:
++IPR: 115200
+then the baud rate is correct and we're probably looking at a pin-mapping issue.
+If it returns:
++IPR: 9600
+or another value, use that in modem.begin().
+At this stage, the modem itself is fully verified and online. The only mystery left is which ESP32 UART pins are actually wired to the EC200U. AT+IPR? is the quickest next clue.
+That message explains the issue.
+E (100) esp_psram: PSRAM enabled but initialization failed
+Your firmware is crashing during startup because Arduino is configured to use PSRAM, but your board either:
+1.	Has no PSRAM, or
+2.	Uses a different PSRAM configuration.
+Fix
+In Arduino IDE:
+Tools
+ └── PSRAM
+      └── Disabled
+Then re-upload.
+Why I think this is happening
+Your module is:
+ESP32-S3-WROOM-1
+Many S3 boards use:
+ESP32-S3-WROOM-1-N16R8
+where:
+•	N16 = 16 MB Flash
+•	R8 = 8 MB PSRAM
+But not every WROOM-1 variant contains PSRAM.
+The boot log suggests Arduino expects PSRAM but cannot initialize it.
+After disabling PSRAM
+Use this test:
+HardwareSerial modem(1);
+void setup() {
+  Serial.begin(115200);
+  modem.begin(115200, SERIAL_8N1, 16, 17);
+  delay(3000);
+  Serial.println("Sending AT...");
+  modem.println("AT");
+}
+void loop() {
+  while (modem.available()) {
+    Serial.write(modem.read());
+  }
+}
+Expected result:
+Sending AT...
+OK
+If you still don't get OK
+The square character likely means:
+UART is connected
+but wrong baud rate
+or
+wrong pins
+At that point, check the modem's UART baud rate from COM5:
+AT+IPR?
+and tell me the result.
+Right now, fix the PSRAM setting first. The PSRAM crash must be eliminated before we can properly test UART communication with the EC200U.
+No, you can keep both USB ports connected at the same time if your PC has enough USB ports.
+A setup like this is ideal:
+USB #1 → ESP32-S3
+          (Arduino Upload + Serial Monitor)
+USB #2 → EC200U
+          (PuTTY on COM5)
+Then:
+•	Arduino Serial Monitor shows ESP32 logs.
+•	PuTTY on COM5 lets you send modem AT commands directly.
+For the baud-rate check, use PuTTY on COM5 and run:
+AT+IPR?
+Expected output might be:
++IPR: 115200
+OK
+or
++IPR: 9600
+OK
+Also, because you saw:
+ESP32 serial1 test Rx pin 16 Tx pin 17
+AT+CMGF=1
+Message sent successfully
+I suspect the vendor demo firmware was already talking to the modem successfully on GPIO16/17.
+Before chasing UART pins further, do this:
+1.	Disable PSRAM in Arduino Tools.
+2.	Reflash the sketch.
+3.	Open Serial Monitor at 115200.
+4.	Check whether the PSRAM error is gone.
+The PSRAM failure may have been corrupting the serial output, making the modem response appear as squares or garbage.
+If you run:
+AT+IPR?
+on COM5 and tell me the result, we can quickly determine whether the problem is a baud-rate mismatch or a pin-mapping issue.
+Yes, and that's actually a good firmware-developer approach.
+You can make the ESP32 scan common modem baud rates automatically:
+HardwareSerial modem(1);
+int bauds[] = {
+  115200,
+  57600,
+  38400,
+  19200,
+  9600
+};
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  for (int i = 0; i < sizeof(bauds)/sizeof(bauds[0]); i++) {
+    Serial.printf("\nTrying %d...\n", bauds[i]);
+    modem.end();
+    modem.begin(bauds[i], SERIAL_8N1, 16, 17);
+    modem.println("AT");
+    delay(500);
+    while(modem.available()) {
+      Serial.write(modem.read());
+    }
+  }
+}
+void loop() {}
+However, based on what you've shown, I suspect the problem is not baud rate.
+This line:
+ESP32 serial1 test Rx pin 16 Tx pin 17
+...
+AT+CMGF=1
+Message sent successfully
+came from firmware already on the board that successfully talked to the modem.
+That suggests:
+•	UART settings were already correct.
+•	GPIO16/17 may indeed be the modem UART.
+The more suspicious thing is that after flashing your sketch you got:
+E (100) esp_psram: PSRAM enabled but initialization failed
+and then garbage.
+So I'd do this first:
+1.	Arduino IDE
+2.	Tools → PSRAM → Disabled
+3.	Reflash.
+4.	Test again.
+Also, the board vendor firmware may be using a different UART than Serial1.
+Try this sketch after disabling PSRAM:
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Hello ESP32");
+}
+void loop() {
+  Serial.println("Running");
+  delay(1000);
+}
+If that runs cleanly, then the ESP32 itself is healthy and we can focus on finding the modem UART.
+One more clue: when you uploaded your sketch, did the original SMS demo disappear permanently, or does it come back after pressing RESET? If it disappeared, then you've successfully overwritten the factory firmware and are now fully in control of the ESP32. That would be useful to know.
+Good! This tells us a lot.
+Sending AT...
+�
+Running
+Running
+Running
+...
+The ESP32 is running perfectly now. The PSRAM issue is gone.
+The single garbage character:
+�
+strongly suggests one of these:
+1.	Wrong UART baud rate.
+2.	Wrong UART pins.
+3.	Modem echoed one byte before UART synchronization.
+Since the factory firmware was sending SMS successfully, I'd bet on wrong pins more than wrong baud rate.
+Let's find the pins scientifically
+The board manufacturer already loaded firmware that talked to the modem.
+Try this sketch:
+HardwareSerial modem(1);
+void testPins(int rx, int tx)
+{
+  Serial.printf("\nTesting RX=%d TX=%d\n", rx, tx);
+  modem.end();
+  modem.begin(115200, SERIAL_8N1, rx, tx);
+  delay(1000);
+  while(modem.available())
+      modem.read();
+  modem.println("AT");
+  delay(1000);
+  while(modem.available())
+  {
+      char c = modem.read();
+      Serial.write(c);
+  }
+}
+void setup()
+{
+  Serial.begin(115200);
+  delay(3000);
+  testPins(16,17);
+  testPins(44,43);
+  testPins(17,16);
+  testPins(43,44);
+}
+void loop(){}
+We're testing:
+16/17  (vendor firmware clue)
+44/43  (common S3 UART pins)
+17/16
+43/44
+If any pair is correct, you'll see:
+AT
+OK
+Another important clue
+The fact that the factory firmware printed:
+AT+CMGF=1
+Message sent successfully
+means the modem is definitely reachable from the ESP32.
+So we are not solving a hardware problem anymore.
+We're simply rediscovering:
+Which UART?
+Which GPIOs?
+Which baud rate?
+Quick shortcut
+Do you still have the example code that came with the board?
+Many of these 7Semi boards ship with example sketches. If you got it from GitHub, a ZIP file, or a product page, send me the link or the sketch and we can immediately see the exact modem pins without trial and error.
+At this point I am about 95% certain the hardware already works and we only need the correct UART configuration to start talking to the EC200U from your own firmware.
+Aha! We found something very useful.
+The vendor appears to have published example code for this exact board. In the example:
+#define EC200U_RX 12
+#define EC200U_TX 13
+HardwareSerial ec200u(1);
+ec200u.begin(115200, SERIAL_8N1, EC200U_RX, EC200U_TX);
+They are using:
+GPIO12 = RX (receiving from EC200U)
+GPIO13 = TX (sending to EC200U)
+for the EC200U connection. [github.com]
+This also explains why your test with GPIO16/17 produced garbage.
+Try this immediately
+HardwareSerial modem(1);
+void setup() {
+  Serial.begin(115200);
+  modem.begin(115200, SERIAL_8N1, 12, 13);
+  delay(3000);
+  Serial.println("Sending AT...");
+  modem.println("AT");
+}
+void loop() {
+  while (modem.available()) {
+    Serial.write(modem.read());
+  }
+}
+Expected:
+Sending AT...
+OK
+________________________________________
+Even better
+The vendor's GitHub contains files named:
+•	EC200U_WITH_ESP32_DC_10120.ino
+•	EC200U_WITH_ESP32_DC_10120_SMS.ino
+•	DC_10120_BASIC_MQTT.ino
+for your exact DC-10120 board. [github.com]
+So instead of reverse-engineering everything, I'd download those examples and start from them.
+________________________________________
+My current theory
+We now have three different pin mappings:
+1.	Back silkscreen: 
+ESP32 TX1 -> 4G RX
+ESP32 RX1 -> 4G TX
+2.	Factory demo message: 
+RX=16 TX=17
+3.	Vendor example code: 
+RX=12 TX=13
+[github.com]
+The third one comes from actual source code published for the DC-10120 board, so that's the one I'd trust first.
+If GPIO12/13 returns OK, we've solved the UART mystery and can move straight to building an LTE hotspot on top of a working modem connection.
+--------------------------------------------
+now the program tells Sending AT...
+
+AT
+
+
+OK
