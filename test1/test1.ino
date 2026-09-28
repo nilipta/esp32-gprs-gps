@@ -1,13 +1,17 @@
+#include <esp_netif.h>
 #include <WiFi.h>
 
 void setup() {
   Serial.begin(115200);
 
-  WiFi.softAP("DC10120-Test", "12345678");
-
-  Serial.println("AP Started");
-  Serial.print("IP: ");
-  Serial.println(WiFi.softAPIP());
+#ifdef ESP_NETIF_DEFAULT_PPP
+  Serial.println("PPP Available");
+#else
+  Serial.println("PPP NOT Available");
+#endif
 }
 
-void loop() {}
+void loop() {
+}
+
+///PPP Available
