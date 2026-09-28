@@ -1,17 +1,16 @@
-#include <esp_netif.h>
 #include <WiFi.h>
+#include <esp_netif.h>
 
-void setup() {
-  Serial.begin(115200);
-
-#ifdef ESP_NETIF_DEFAULT_PPP
-  Serial.println("PPP Available");
-#else
-  Serial.println("PPP NOT Available");
-#endif
+extern "C" {
+#include "esp_netif_ppp.h"
 }
 
-void loop() {
+void setup()
+{
+    Serial.begin(115200);
+    Serial.println("PPP Header Found");
 }
 
-///PPP Available
+void loop()
+{
+}
