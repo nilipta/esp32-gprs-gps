@@ -1,30 +1,28 @@
 HardwareSerial modem(1);
 
-void sendAT(const char *cmd)
+void cmd(const char *s, int waitms = 2000)
 {
   Serial.print("\n>> ");
-  Serial.println(cmd);
+  Serial.println(s);
 
-  modem.println(cmd);
+  modem.println(s);
+  delay(waitms);
 
-  delay(1000);
-
-  while(modem.available())
+  while (modem.available())
     Serial.write(modem.read());
 }
 
 void setup()
 {
   Serial.begin(115200);
-
   modem.begin(115200, SERIAL_8N1, 12, 13);
 
-  delay(3000);
+  delay(5000);
 
-  sendAT("ATI");
-  sendAT("AT+CSQ");
-  sendAT("AT+COPS?");
-  sendAT("AT+QIACT?");
+  cmd("AT");
+  cmd("AT+CGDCONT=1,\"IP\",\"airtelgprs.com\"");
+  cmd("AT+QIACT=1", 5000);
+  cmd("AT+QIACT?");
 }
 
 void loop()
