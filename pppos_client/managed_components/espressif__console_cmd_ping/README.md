@@ -1,0 +1,160 @@
+# Console command ping and DNS server configuration
+The component provides a console where the 'ping' command, 'getaddrinfo', and DNS server configuration commands can be executed.
+
+## API
+
+### Steps to enable console in an example code:
+1. Add this component to your project using ```idf.py add-dependency``` command.
+2. In the main file of the example, add the following line:
+    ```c
+    #include "console_ping.h"
+    ```
+3. Ensure esp-netif and NVS flash is initialized and default event loop is created in your app_main():
+    ```c
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_err_t ret = nvs_flash_init();   //Initialize NVS
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ```
+4. In your app_main() function, add the following line as the last line:
+    ```c
+    ESP_ERROR_CHECK(console_cmd_init());     // Initialize console
+
+    // Register all plugin command added to your project
+    ESP_ERROR_CHECK(console_cmd_all_register());
+
+    // To register only ping/dns command skip calling console_cmd_all_register()
+    ESP_ERROR_CHECK(console_cmd_ping_register());
+    ESP_ERROR_CHECK(console_cmd_getaddrinfo_register());
+    ESP_ERROR_CHECK(console_cmd_setdnsserver_register());
+    ESP_ERROR_CHECK(console_cmd_getdnsserver_register());
+
+    ESP_ERROR_CHECK(console_cmd_start());    // Start console
+    ```
+
+### Adding a plugin command or component:
+To add a plugin command or any component from IDF component manager into your project, simply include an entry within the `idf_component.yml` file.
+
+Note: **Auto-registration** of a specific plugin command can be disabled from menuconfig.
+
+For more details refer [IDF Component Manager](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-component-manager.html)
+
+
+## Suported command:
+
+### ping:
+```
+ping  [-W <t>] [-i <t>] [-s <n>] [-c <n>] [-Q <n>] [-T <n>] [-I <n>] <host>
+  send ICMP ECHO_REQUEST to network hosts
+  -W, --timeout=<t>  Time to wait for a response, in seconds
+  -i, --interval=<t>  Wait interval seconds between sending each packet
+  -s, --size=<n>  Specify the number of data bytes to be sent
+  -c, --count=<n>  Stop after sending count packets
+  -Q, --tos=<n>  Set Type of Service related bits in IP datagrams
+  -T, --ttl=<n>  Set Time to Live related bits in IP datagrams
+  -I, --interface=<n>  Set Interface number 0=no-interface selected, >0 netif number + 1 (1 is usually 'lo0')
+        <host>  Host address
+
+getaddrinfo  [-f <AF>] [-F <FLAGS>]... [-p <port>] <hostname>
+  Usage: getaddrinfo [options] <hostname> [service]
+  -f, --family=<AF>  Address family (AF_INET, AF_INET6, AF_UNSPEC).
+  -F, --flags=<FLAGS>  Special flags (AI_PASSIVE, AI_CANONNAME, AI_NUMERICHOST, AI_V4MAPPED, AI_ALL).
+  -p, --port=<port>  String containing a numeric port number.
+    <hostname>  Host address
+
+setdnsserver  [--if=<iface>] [--global] <main> [backup] [fallback]
+  Usage: setdnsserver [--if <iface>|--global] <main> [backup] [fallback]
+  --if=<iface>  Set only this interface (impl name or if_key, e.g. st2 or WIFI_STA_DEF)
+      --global  Set lwIP global table (esp_netif=NULL)
+        <main>  The main DNS server IP address.
+        backup  The secondary DNS server IP address (optional).
+      fallback  The fallback DNS server IP address (optional).
+
+getdnsserver  [iface|global]
+  Usage: getdnsserver [iface|global]
+  iface|global  Print only this table: 'global', impl name (e.g. st2), or if_key (e.g. WIFI_STA_DEF).
+```
+These commands allow you to configure and retrieve DNS server settings on your ESP32 device, in addition to the existing ping functionality.
+
+With `CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=y` (IDF >= 5.4), lwIP keeps a global DNS table used by hostname lookups (`getaddrinfo`, `ping` of a name) separately from each interface's stored `dns[]`. `getdnsserver` prints `[global]` first, then every interface (`Interface Name:` plus `if_key`). The default netif is marked `[default]`. Without that Kconfig, `[global]` is unavailable and each interface shows the shared lwIP table. `--if` and the optional `getdnsserver` argument accept the impl name (`ifconfig` / `Interface Name:`) or `if_key`.
+
+Without `CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF` (the default, and IDF < 5.4), `setdnsserver --if` on a client interface still runs, but prints a warning: the address is written to the shared lwIP DNS table, not only the named interface. A DHCP-server interface is unchanged; `--if` there still sets the DNS that server offers.
+
+`dns_clear_servers(true)` (used when a DHCP client starts) wipes global Main/Backup but leaves Fallback in place. After a non-default STA DHCP, `getdnsserver` may show global Main/Backup as `0.0.0.0` while Fallback and the WAN interface `dns[]` still look valid — that is the expected split, not a failed print.
+
+## Usage
+### Using the setdnsserver command:
+1. To set the main DNS server on every interface (compat):
+```
+setdnsserver 8.8.8.8
+```
+
+2. To set the main and backup DNS servers:
+
+```
+setdnsserver 8.8.8.8 fe80::b0be:83ff:fe77:dd64
+```
+
+3. To set the main, backup, and fallback DNS servers:
+
+```
+setdnsserver 8.8.8.8 fe80::b0be:83ff:fe77:dd64 www.xyz.com
+```
+
+4. To set DNS on one interface only (impl name; `WIFI_STA_DEF` also works):
+
+```
+setdnsserver --if st2 8.8.8.8 8.8.4.4
+```
+
+5. To set the lwIP global table only (`CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=y`):
+
+```
+setdnsserver --global 1.1.1.1
+```
+
+### Using the getdnsserver command:
+To print the global table and every interface:
+```
+getdnsserver
+```
+
+To print only the lwIP global table:
+```
+getdnsserver global
+```
+
+To print only one interface (equivalent: `getdnsserver WIFI_STA_DEF`):
+```
+getdnsserver st2
+```
+
+### Using the getaddrinfo command:
+1. To get address information for a hostname:
+
+```
+getaddrinfo www.example.com
+```
+
+2. To specify additional options:
+
+```
+getaddrinfo -f AF_INET -F AI_PASSIVE www.example.com
+```
+
+### Using the ping command:
+1. To ping a host:
+
+```
+ping www.example.com
+```
+
+2. To specify additional options, such as timeout, interval, packet size, interface, etc.:
+
+```
+ping -W 5 -i 1 -s 64 -c 4 -Q 0x10 -T 64 -I 0 www.example.com
+```
