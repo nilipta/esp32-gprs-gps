@@ -103,6 +103,10 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
         xEventGroupSetBits(event_group, CONNECT_BIT);
 
         ESP_LOGI(TAG, "GOT ip event!!!");
+		ip_napt_enable_no(esp_netif_get_netif_impl_index(
+			esp_netif_get_handle_from_ifkey("WIFI_AP_DEF")), 1);
+
+		ESP_LOGI(TAG, "NAT Enabled");
     } else if (event_id == IP_EVENT_PPP_LOST_IP) {
         ESP_LOGI(TAG, "Modem Disconnect from PPP Server");
         xEventGroupSetBits(event_group, DISCONNECT_BIT);
@@ -149,7 +153,7 @@ static void wifi_init_softap(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     // Enable NAPT on the AP's subnet (default SoftAP gateway is 192.168.4.1)
-    ip_napt_enable(esp_ip4addr_aton("192.168.4.1"), 1);
+    // ip_napt_enable(esp_ip4addr_aton("192.168.4.1"), 1);
 
     ESP_LOGI("WIFI_AP", "SoftAP started! SSID: Airtel_4G_Hotspot, Pass: 12345678");
 }
@@ -371,6 +375,13 @@ void app_main(void)
     if (ping_ret_val != 0) {
         ESP_LOGE(TAG, "Ping command failed with return value: %d", ping_ret_val);
     }
+	ESP_LOGI(TAG,
+         "PPP connected, staying online forever");
+
+	while (1)
+	{
+		vTaskDelay(pdMS_TO_TICKS(10000));
+	}
     CHECK_USB_DISCONNECTION(event_group);
 
     err = esp_modem_set_mode(dce, ESP_MODEM_MODE_COMMAND);
@@ -385,6 +396,7 @@ void app_main(void)
         return;
     }
     ESP_LOGI(TAG, "IMSI=%s", imsi);
+
 
 #if defined(CONFIG_EXAMPLE_SERIAL_CONFIG_USB)
     // USB example runs in a loop to demonstrate hot-plugging and sudden disconnection features.

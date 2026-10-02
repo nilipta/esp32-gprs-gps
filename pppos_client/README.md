@@ -18,3 +18,22 @@ For USB enabled targets (ESP32-S2, ESP32-S3, or ESP32-P4), it is possible to con
 USB example uses Quactel BG96 modem device. BG96 needs a positive pulse on its PWK pin to boot-up.
 
 This example supports USB modem hot-plugging and reconnection.
+
+
+idf.py menuconfig
+Example Configuration
+    ->
+Choose supported modem device (DCE)
+
+    Type of serial connection to the modem (UART)  --->                                                                                       Choose supported modem device (DCE) (Custom device)  --->                                                                             (airtelgprs.com) Set MODEM APN                                                                                                            [ ] Short message (SMS)                                                                                                                   [ ] SIM PIN needed                                                                                                                            UART Configuration  --->                                                                                                              (mqtt://test.mosquitto.org) MQTT Broker URL                                                                                               (/topic/esp-pppos) MQTT topic to publish/subscribe                                                                                        (esp32-pppos) MQTT data to publish/receive                                                                                                [ ] Demonstrate netif pause                                                                                                               [ ] Detect mode before 
+	
+( ) SIM800                                                                                                                                ( ) BG96                                                                                                                                  ( ) SIM7000                                                                                                                               ( ) SIM7070                                                                                                                               ( ) SIM7600                                                                                                                               (X) Custom device                                                                                                                                            
+SIM800
+BG96
+SIM7000
+SIM7070
+SIM7600
+device (X) Custom
+
+
+(13) TXD Pin Number                                                                                                                       (12) RXD Pin Number                                                                                                                       (27) RTS Pin Number                                                                                                                       (23) CTS Pin Number                                                                                                                       (2048) UART Event Task Stack Size                                                                                                         (5) UART Event Task Priority                                                                                                              (30) UART Event Queue Size                                                                                                                (20) UART Pattern Queue Size                                                                                                              (512) UART TX Buffer Size                                                                                                                 (1024) UART RX Buffer Size                                                                                                                    Set preferred modem control flow (No control flow)
