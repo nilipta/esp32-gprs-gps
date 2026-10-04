@@ -37,3 +37,26 @@ device (X) Custom
 
 
 (13) TXD Pin Number                                                                                                                       (12) RXD Pin Number                                                                                                                       (27) RTS Pin Number                                                                                                                       (23) CTS Pin Number                                                                                                                       (2048) UART Event Task Stack Size                                                                                                         (5) UART Event Task Priority                                                                                                              (30) UART Event Queue Size                                                                                                                (20) UART Pattern Queue Size                                                                                                              (512) UART TX Buffer Size                                                                                                                 (1024) UART RX Buffer Size                                                                                                                    Set preferred modem control flow (No control flow)
+
+
+The vendor appears to have published example code for this exact board. In the example:
+
+C++
+#define EC200U_RX 12
+#define EC200U_TX 13
+ 
+HardwareSerial ec200u(1);
+ 
+ec200u.begin(115200, SERIAL_8N1, EC200U_RX, EC200U_TX);
+Show more lines
+
+They are using:
+
+Plain Text
+GPIO12 = RX (receiving from EC200U)
+GPIO13 = TX (sending to EC200U)
+Show more lines
+
+for the EC200U connection.
+
+This also explains why your test with GPIO16/17 produced garbage.

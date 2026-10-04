@@ -1,0 +1,247 @@
+/*
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Unlicense OR CC0-1.0
+ */
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
+#include "esp_netif.h"
+#include "esp_netif_ppp.h"
+#include "esp_modem_api.h"
+#include "esp_console.h"
+#include "console_ping.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "sdkconfig.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+#include "lwip/lwip_napt.h"
+#include "driver/gpio.h"
+
+// 7Semi ESP32-S3 EC200U Onboard Pin Assignments
+#define EC200U_TXD_PIN      GPIO_NUM_13   // ESP32 TX1 -> EC200U RXD
+#define EC200U_RXD_PIN      GPIO_NUM_12   // ESP32 RX1 <- EC200U TXD
+#define EC200U_RESET_PIN    GPIO_NUM_9    // 4G RESET
+#define EC200U_ON_OFF_PIN   GPIO_NUM_10   // 4G ON/OFF (PWRKEY)
+
+static const char *TAG = "pppos_example";
+static EventGroupHandle_t event_group = NULL;
+static const int CONNECT_BIT = BIT0;
+static const int DISCONNECT_BIT = BIT1;
+
+static void ec200u_hardware_power_on(void)
+{
+    ESP_LOGI(TAG, "Configuring EC200U hardware control pins...");
+
+    // Configure GPIO 10 as Open-Drain output with pull-up
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << EC200U_ON_OFF_PIN),
+        .mode = GPIO_MODE_OUTPUT_OD,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+
+    // Keep reset high (inactive for active-low reset)
+    gpio_reset_pin(EC200U_RESET_PIN);
+    gpio_set_direction(EC200U_RESET_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(EC200U_RESET_PIN, 1);
+
+    // Pulse 4G ON/OFF pin (Active LOW pulse: pull to 0V for 1.5s, then release to 1)
+    ESP_LOGI(TAG, "Asserting 4G ON/OFF active-low pulse (GPIO 10)...");
+    gpio_set_level(EC200U_ON_OFF_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(EC200U_ON_OFF_PIN, 0); // Pull to 0V
+    vTaskDelay(pdMS_TO_TICKS(1500));      // Hold 1.5s
+    gpio_set_level(EC200U_ON_OFF_PIN, 1); // Float back high
+
+    ESP_LOGI(TAG, "Power-on pulse completed. Waiting 5s for EC200U to boot...");
+    vTaskDelay(pdMS_TO_TICKS(5000));
+}
+
+static void on_ppp_changed(void *arg, esp_event_base_t event_base,
+                           int32_t event_id, void *event_data)
+{
+    ESP_LOGI(TAG, "PPP state changed event %" PRIu32, event_id);
+    if (event_id == NETIF_PPP_ERRORUSER) {
+        esp_netif_t **p_netif = event_data;
+        ESP_LOGI(TAG, "User interrupted event from netif: %p", *p_netif);
+    }
+}
+
+static void on_ip_event(void *arg, esp_event_base_t event_base,
+                        int32_t event_id, void *event_data)
+{
+    ESP_LOGD(TAG, "IP event! %" PRIu32, event_id);
+    if (event_id == IP_EVENT_PPP_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        esp_netif_t *netif = event->esp_netif;
+
+        ESP_LOGI(TAG, "Modem Connected to PPP Server");
+        ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
+        ESP_LOGI(TAG, "IP          : " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Netmask     : " IPSTR, IP2STR(&event->ip_info.netmask));
+        ESP_LOGI(TAG, "Gateway     : " IPSTR, IP2STR(&event->ip_info.gw));
+        ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
+
+        // Enable NAPT on SoftAP interface
+        esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+        if (ap_netif != NULL) {
+            ip_napt_enable_no(esp_netif_get_netif_impl_index(ap_netif), 1);
+            ESP_LOGI(TAG, "LwIP NAPT enabled on SoftAP interface");
+
+            // Forward modem DNS to SoftAP DHCP clients
+            esp_netif_dns_info_t dns_info;
+            if (esp_netif_get_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns_info) == ESP_OK) {
+                uint8_t opt = 1;
+                esp_netif_dhcps_stop(ap_netif);
+                esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns_info);
+                esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &opt, sizeof(opt));
+                esp_netif_dhcps_start(ap_netif);
+                ESP_LOGI(TAG, "Configured SoftAP DHCP with DNS: " IPSTR, IP2STR(&dns_info.ip.u_addr.ip4));
+            }
+        }
+
+        xEventGroupSetBits(event_group, CONNECT_BIT);
+    } else if (event_id == IP_EVENT_PPP_LOST_IP) {
+        ESP_LOGW(TAG, "Modem Disconnected from PPP Server");
+        xEventGroupSetBits(event_group, DISCONNECT_BIT);
+    }
+}
+
+static void wifi_init_softap(void)
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    esp_netif_create_default_wifi_ap();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = "Airtel_4G_Hotspot",
+            .ssid_len = strlen("Airtel_4G_Hotspot"),
+            .channel = 1,
+            .password = "12345678",
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .pmf_cfg = {
+                .required = false,
+            },
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI("WIFI_AP", "SoftAP started! SSID: Airtel_4G_Hotspot, Pass: 12345678");
+}
+
+void app_main(void)
+{
+    /* 1. Core Network & Wi-Fi Initialization */
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &on_ppp_changed, NULL));
+
+    ESP_ERROR_CHECK(console_cmd_init());
+    ESP_ERROR_CHECK(console_cmd_ping_register());
+    ESP_ERROR_CHECK(console_cmd_start());
+
+    wifi_init_softap();
+
+    /* 2. Hardware Power-On EC200U */
+    ec200u_hardware_power_on();
+
+    /* 3. Configure the PPP netif */
+    esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
+    esp_netif_t *esp_netif = esp_netif_new(&netif_ppp_config);
+    assert(esp_netif);
+
+    event_group = xEventGroupCreate();
+
+    /* 4. Configure DTE UART (GPIO 13 TX, GPIO 12 RX) */
+    esp_modem_dce_config_t dce_config = ESP_MODEM_DCE_DEFAULT_CONFIG(CONFIG_EXAMPLE_MODEM_PPP_APN);
+    esp_modem_dte_config_t dte_config = ESP_MODEM_DTE_DEFAULT_CONFIG();
+    dte_config.uart_config.port_num = UART_NUM_1;
+    dte_config.uart_config.tx_io_num = EC200U_TXD_PIN; // GPIO 13
+    dte_config.uart_config.rx_io_num = EC200U_RXD_PIN; // GPIO 12
+    dte_config.uart_config.rts_io_num = -1;
+    dte_config.uart_config.cts_io_num = -1;
+    dte_config.uart_config.flow_control = ESP_MODEM_FLOW_CONTROL_NONE;
+    dte_config.uart_config.baud_rate = 115200;
+    dte_config.uart_config.rx_buffer_size = 4096;
+    dte_config.uart_config.tx_buffer_size = 2048;
+    dte_config.uart_config.event_queue_size = 30;
+    dte_config.task_stack_size = 4096;
+    dte_config.task_priority = 10;
+    dte_config.dte_buffer_size = 2048;
+
+    ESP_LOGI(TAG, "Initializing esp_modem with BG96 profile (EC200U compatible)...");
+    esp_modem_dce_t *dce = esp_modem_new_dev(ESP_MODEM_DCE_BG96, &dte_config, &dce_config, esp_netif);
+    assert(dce);
+
+    /* 5. AT Synchronization Loop */
+    ESP_LOGI(TAG, "Synchronizing AT command engine...");
+    bool sync_ok = false;
+    for (int retry = 0; retry < 15; retry++) {
+        if (esp_modem_sync(dce) == ESP_OK) {
+            sync_ok = true;
+            ESP_LOGI(TAG, "Modem AT sync established (attempt %d)", retry + 1);
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    if (!sync_ok) {
+        ESP_LOGE(TAG, "Failed to synchronize with EC200U over UART. Check power and board switches.");
+        return;
+    }
+
+    /* 6. Verify Cellular Signal */
+    int rssi = 99, ber = 99;
+    for (int retry = 0; retry < 15; retry++) {
+        esp_err_t err = esp_modem_get_signal_quality(dce, &rssi, &ber);
+        if (err == ESP_OK && rssi != 99 && rssi > 0) {
+            ESP_LOGI(TAG, "Cell signal locked: RSSI=%d, BER=%d", rssi, ber);
+            break;
+        }
+        ESP_LOGW(TAG, "Waiting for network registration... (rssi=%d)", rssi);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    /* 7. Enter PPP Data Mode */
+    xEventGroupClearBits(event_group, CONNECT_BIT | DISCONNECT_BIT);
+    ESP_LOGI(TAG, "Entering DATA mode (PPPoS Dial-in)...");
+    esp_err_t err = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_modem_set_mode(DATA) failed: %d (%s)", err, esp_err_to_name(err));
+        return;
+    }
+
+    /* 8. Await IP assignment */
+    ESP_LOGI(TAG, "Waiting for IP address...");
+    EventBits_t bits = xEventGroupWaitBits(event_group, CONNECT_BIT | DISCONNECT_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(60000));
+    if (!(bits & CONNECT_BIT)) {
+        ESP_LOGE(TAG, "Failed to obtain PPP IP address within timeout");
+        esp_modem_set_mode(dce, ESP_MODEM_MODE_COMMAND);
+        return;
+    }
+
+    ESP_LOGI(TAG, "PPPoS Link UP. System online. SoftAP NAPT active.");
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}

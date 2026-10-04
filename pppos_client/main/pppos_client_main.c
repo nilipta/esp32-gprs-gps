@@ -103,10 +103,18 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
         xEventGroupSetBits(event_group, CONNECT_BIT);
 
         ESP_LOGI(TAG, "GOT ip event!!!");
-		ip_napt_enable_no(esp_netif_get_netif_impl_index(
-			esp_netif_get_handle_from_ifkey("WIFI_AP_DEF")), 1);
 
-		ESP_LOGI(TAG, "NAT Enabled");
+        esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+        ESP_LOGI(TAG, "AP netif ptr=%p", ap);
+        if (ap == NULL) {
+            ESP_LOGE(TAG, "A* interface not found!");
+        } else {
+            int idx = esp_netif_get_netif_impl_index(ap);
+            ESP_LOGI(TAG, "*P index=%d", idx);
+            ip_napt_enable_no(idx, 1);
+            ESP_LOGI(TAG,"NAT Enabled");
+        }
+        
     } else if (event_id == IP_EVENT_PPP_LOST_IP) {
         ESP_LOGI(TAG, "Modem Disconnect from PPP Server");
         xEventGroupSetBits(event_group, DISCONNECT_BIT);
@@ -161,6 +169,8 @@ static void wifi_init_softap(void)
 
 void app_main(void)
 {
+    ESP_LOGI("Nilipta", "Updated at 8.17");
+
     /* Init and register system/core components */
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -180,6 +190,7 @@ void app_main(void)
     esp_modem_dce_config_t dce_config = ESP_MODEM_DCE_DEFAULT_CONFIG(CONFIG_EXAMPLE_MODEM_PPP_APN);
     esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
     esp_netif_t *esp_netif = esp_netif_new(&netif_ppp_config);
+    esp_netif_set_default_netif(esp_netif);
     assert(esp_netif);
 
     event_group = xEventGroupCreate();
@@ -370,13 +381,14 @@ void app_main(void)
     esp_modem_pause_net(dce, false);
     ESP_ERROR_CHECK(esp_console_run("ping www.espressif.com", &ping_ret_val));
     ESP_LOGI(TAG, "Ping command finished with return value: %d", ping_ret_val);
+    ESP_LOGE(TAG,"XXXXXXXXXXXXXXXX HOTSPOT TEST - CONFIG_EXAMPLE_PAUSE_NETIF_TO_CHECK_SIGNAL");
 #endif // CONFIG_EXAMPLE_PAUSE_NETIF_TO_CHECK_SIGNAL
 
     if (ping_ret_val != 0) {
         ESP_LOGE(TAG, "Ping command failed with return value: %d", ping_ret_val);
     }
-	ESP_LOGI(TAG,
-         "PPP connected, staying online forever");
+    ESP_LOGE(TAG,"XXXXXXXXXXXXXXXX HOTSPOT TEST XXXXXXXXXXXXXXXX");
+	ESP_LOGI(TAG, "PPP connected, staying online forever");
 
 	while (1)
 	{
